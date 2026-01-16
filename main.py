@@ -18,11 +18,11 @@ import dotenv
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     dotenv.load_dotenv(".env")
-    app.state.db = connectToDB()
+    app.state.db = await connectToDB()
     app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
     app.state.FILE_PATH.mkdir(exist_ok=True)
     yield
-    app.state.db.client.close()
+    await app.state.db.client.close()
 
 app = FastAPI(title="BRICS API",lifespan=lifespan)
 
