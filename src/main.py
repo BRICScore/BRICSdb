@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import json
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
@@ -12,12 +13,18 @@ from models import MeasurementMetadata
 import shutil
 import dotenv
 
-dotenv.load_dotenv(".env")
-db = connectToDB()
-FILE_PATH=Path(os.getenv("FILE_PATH"))
-FILE_PATH.mkdir(exist_ok=True)
 
-app = FastAPI(title="BRICS API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    dotenv.load_dotenv(".env")
+    app.state.db = connectToDB()
+    app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
+    app.state.FILE_PATH.mkdir(exist_ok=True)
+    yield
+    app.state.db.client.close()
+
+app = FastAPI(title="BRICS API",lifespan=lifespan)
 
 @app.post("/measurement/upload")
 async def uploadMeasurement(measurement_file: UploadFile = File(...),
@@ -35,7 +42,7 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
     
     measurement_id = uuid.uuid4()
 
-    file_path = FILE_PATH / str(measurement_id) + ".bson"
+    file_path = app.state.FILE_PATH / str(measurement_id) + ".bson"
 
     metadata_dict = {
         "measurement_id": measurement_id,
@@ -48,7 +55,7 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
 
     metadata = MeasurementMetadata(**metadata_dict)
 
-    coll = db.get_collection("measurement")
+    coll = app.state.db.get_collection("measurement")
 
     result = await coll.insert_one(metadata.model_dump())
 
@@ -63,7 +70,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
                                 length_min: Optional[int] = Query(None),
                                 length_max: Optional[int] = Query(None)):
 
-    coll = db.get_collection("measurement")
+    coll = app.state.db.get_collection("measurement")
 
     query = {}
 
