@@ -1,9 +1,9 @@
-from pymongo import MongoClient
+from pymongo import AsyncMongoClient
 import os
 
 def connectToDB():
     MONGO_URI = os.getenv("MONGO_URI")
-    client = MongoClient(MONGO_URI, maxPoolSize=10)
+    client = AsyncMongoClient(MONGO_URI, maxPoolSize=10)
     if client:
         return client.get_database("brics")
     else:

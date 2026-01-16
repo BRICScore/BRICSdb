@@ -4,22 +4,24 @@ import zipfile
 import bson
 from fastapi import UploadFile
 from models import MeasurementMetadata
+import aiofiles
 
-def jsonl_to_bson(src: UploadFile, dst: Path):
-    with dst.open("wb") as f_out:
-        while line := src.file.readline():
-            doc = json.loads(line.decode("utf-8"))
+async def jsonl_to_bson(src: UploadFile, dst: Path):
+    async with aiofiles.open(dst, "wb") as f_out:
+        async for line in src:
+            line = line.decode("utf-8").strip()
+            doc = json.loads(line)
             f_out.write(bson.BSON.encode(doc))
 
-def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
-    with open(dst, "w", encoding="utf-8") as f_out:
+async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
+    async with aiofiles.open(dst, "w", encoding="utf-8") as f_out:
         f_out.write(metadata.model_dump_json())
         f_out.write("\n")
-        with src.open("rb") as f_in:
+        async with aiofiles.open(src, "rb") as f_in:
             while True:
                 try:
                     doc = bson.decode_file_iter(f_in)
-                    for d in doc:
+                    async for d in doc:
                         line = json.dumps(d)
                         f_out.write(line + "\n")
                 except EOFError:

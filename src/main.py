@@ -1,3 +1,4 @@
+import json
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -23,7 +24,14 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
                             person_id: str = Form(...),
                             timestamp: float = Form(...),
                             duration_ms: int = Form(...),
-                            labels: list[str] = Form(...)):
+                            labels: str = Form(...)):
+    
+    try:
+        labels_list = json.loads(labels)
+        if not isinstance(labels_list, list):
+            raise ValueError()
+    except Exception:
+        raise HTTPException(400, "Labels must be a JSON list")
     
     measurement_id = uuid.uuid4()
 
@@ -34,8 +42,8 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
         "person_id": person_id,
         "timestamp": timestamp,
         "duration_ms": duration_ms,
-        "measurement_file_path": file_path,
-        "labels": labels
+        "measurement_file_path": str(file_path),
+        "labels": labels_list
     }
 
     metadata = MeasurementMetadata(**metadata_dict)
@@ -45,7 +53,7 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
     result = await coll.insert_one(metadata.model_dump())
 
     if result.acknowledged:
-        await jsonl_to_bson(measurement_file, file_path)
+        await jsonl_to_bson(measurement_file.file, file_path)
 
     return
 
@@ -76,10 +84,10 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
     dataset_dir = tmp_dir / "dataset"
     dataset_dir.mkdir()
     try:
-        for index in measurementIndexes:
+        async for index in measurementIndexes:
             measurement = MeasurementMetadata(**index)
             temp_file_path = dataset_dir / Path(measurement.measurement_file_path).name
-            bson_to_jsonl(Path(measurement.measurement_file_path), temp_file_path, measurement)
+            await bson_to_jsonl(Path(measurement.measurement_file_path), temp_file_path, measurement)
 
         zip_path = tmp_dir / "measurements_dataset.zip"
         zip_directory(dataset_dir, zip_path)
