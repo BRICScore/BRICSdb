@@ -1,0 +1,9 @@
+pymongo
+dotenv
+shutil
+fastapi
+tempfile
+os
+typing
+aiofiles
+pathlib
