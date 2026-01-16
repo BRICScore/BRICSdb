@@ -3,7 +3,7 @@ from pathlib import Path
 import zipfile
 import bson
 from fastapi import UploadFile
-from models import MeasurementMetadata
+from src.models import MeasurementMetadata
 import aiofiles
 
 async def jsonl_to_bson(src: UploadFile, dst: Path):
