@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    ports:
+      - "443:443"
+    env_file:
+      - .env
+    volumes:
+      - ./certs:/certs:ro
+      - /home/brics/dataset:/dataset
+    restart: unless-stopped

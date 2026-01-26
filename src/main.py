@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import json
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
+import hashlib
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
 from src.utils import jsonl_to_bson, bson_to_jsonl, zip_directory
@@ -20,11 +21,31 @@ async def lifespan(app: FastAPI):
     dotenv.load_dotenv(".env")
     app.state.db = await connectToDB()
     app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
+    app.state.WHITELIST=json.loads(os.getenv("WHITELIST", "[]"))
     app.state.FILE_PATH.mkdir(exist_ok=True)
     yield
     await app.state.db.client.close()
 
 app = FastAPI(title="BRICS API",lifespan=lifespan)
+
+@app.middleware("http")
+async def mtls_whitelist(request: Request, call_next):
+    transport = request.scope.get("transport")
+    ssl_object = transport.get_extra_info("ssl_object") if transport else None
+
+    if not ssl_object:
+        raise HTTPException(403, "TLS required")
+
+    cert = ssl_object.getpeercert(binary_form=True)
+    if not cert:
+        raise HTTPException(403, "Client certificate required")
+
+    fingerprint = hashlib.sha256(cert).hexdigest().upper()
+
+    if fingerprint not in app.state.WHITELIST:
+        raise HTTPException(403, "Client not whitelisted")
+
+    return await call_next(request)
 
 @app.post("/measurement/upload")
 async def uploadMeasurement(measurement_file: UploadFile = File(...),
