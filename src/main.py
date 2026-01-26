@@ -4,13 +4,13 @@ import hashlib
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
-from src.utils import jsonl_to_bson, bson_to_jsonl, zip_directory
+from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
 import tempfile
-from src.db import connectToDB
+from db import connectToDB
 import uuid
 import os
 from typing import Optional
-from src.models import MeasurementMetadata
+from models import MeasurementMetadata
 import shutil
 import dotenv
 
