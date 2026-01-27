@@ -28,24 +28,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="BRICS API",lifespan=lifespan)
 
-@app.middleware("http")
-async def mtls_whitelist(request: Request, call_next):
-    transport = request.scope.get("transport")
-    ssl_object = transport.get_extra_info("ssl_object") if transport else None
-
-    if not ssl_object:
-        raise HTTPException(403, "TLS required")
-
-    cert = ssl_object.getpeercert(binary_form=True)
-    if not cert:
-        raise HTTPException(403, "Client certificate required")
-
-    fingerprint = hashlib.sha256(cert).hexdigest().upper()
-
-    if fingerprint not in app.state.WHITELIST:
-        raise HTTPException(403, "Client not whitelisted")
-
-    return await call_next(request)
+@app.get("/test")
+async def test():
+    return {"status": "ok"}
 
 @app.post("/measurement/upload")
 async def uploadMeasurement(measurement_file: UploadFile = File(...),
