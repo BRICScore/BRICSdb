@@ -1,15 +1,12 @@
 from contextlib import asynccontextmanager
 import json
 import bson.objectid as bs
-from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Form, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
-from pymongo import WriteConcern
-from pymongo.read_concern import ReadConcern
 from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
 import tempfile
 from db import connectToDB
-import uuid
 import os
 from typing import Optional
 from models import MeasurementMetadata
@@ -21,11 +18,12 @@ import dotenv
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     dotenv.load_dotenv(".env")
-    app.state.db = await connectToDB()
+    app.state.client = await connectToDB()
     app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
     app.state.FILE_PATH.mkdir(exist_ok=True)
+    app.state.db = app.state.client.get_database("brics")
     yield
-    await app.state.db.client.close()
+    await app.state.client.close()
 
 app = FastAPI(title="BRICS API",lifespan=lifespan)
 
@@ -67,12 +65,12 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
 
     measurement_coll = app.state.db.get_collection("measurement")
 
-    with app.state.db.client.start_session() as session:
+    with app.state.client.start_session() as session:
         with session.start_transaction():            
             result = await measurement_coll.insert_one(metadata.model_dump(), session=session)
-            if result.acknowledged:
-                await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
-                await jsonl_to_bson(measurement_file_work.file, file_path_work)
+           
+            await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
+            await jsonl_to_bson(measurement_file_work.file, file_path_work)
             
     return
 
