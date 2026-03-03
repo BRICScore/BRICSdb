@@ -4,6 +4,9 @@ import hashlib
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
+
+from pymongo import WriteConcern
+from pymongo.read_concern import ReadConcern
 from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
 import tempfile
 from db import connectToDB
@@ -48,8 +51,8 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     
     measurement_id = uuid.uuid4()
 
-    file_path_raw = app.state.FILE_PATH / str(measurement_id) + "_raw.bson"
-    file_path_work = app.state.FILE_PATH / str(measurement_id) + "_work.bson"
+    file_path_raw = app.state.FILE_PATH / (str(measurement_id) + "_raw.bson")
+    file_path_work = app.state.FILE_PATH / (str(measurement_id) + "_work.bson")
 
     metadata_dict = {
         "measurement_id": measurement_id,
@@ -63,14 +66,15 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
 
     metadata = MeasurementMetadata(**metadata_dict)
 
-    coll = app.state.db.get_collection("measurement")
+    measurement_coll = app.state.db.get_collection("measurement")
 
-    result = await coll.insert_one(metadata.model_dump())
-
-    if result.acknowledged:
-        await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
-        await jsonl_to_bson(measurement_file_work.file, file_path_work)
-
+    with app.state.db.client.start_session() as session:
+        with session.start_transaction():            
+            result = await measurement_coll.insert_one(metadata.model_dump(), session=session)
+            if result.acknowledged:
+                await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
+                await jsonl_to_bson(measurement_file_work.file, file_path_work)
+            
     return
 
 @app.get("/measurement/download")
