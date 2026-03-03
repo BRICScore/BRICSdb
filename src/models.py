@@ -1,8 +1,9 @@
 from pydantic import BaseModel
 from typing import Optional
+import bson.objectid as bs
 
 class MeasurementMetadata(BaseModel):
-    measurement_id: str
+    _id: bs.ObjectId
     person_id: str
     timestamp: float
     duration_ms: int

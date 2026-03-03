@@ -1,10 +1,9 @@
 from contextlib import asynccontextmanager
 import json
-import hashlib
+import bson.objectid as bs
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
-
 from pymongo import WriteConcern
 from pymongo.read_concern import ReadConcern
 from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
@@ -49,13 +48,13 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     except Exception:
         raise HTTPException(400, "Labels must be a JSON list")
     
-    measurement_id = uuid.uuid4()
+    measurement_id = bs.ObjectId()
 
     file_path_raw = app.state.FILE_PATH / (str(measurement_id) + "_raw.bson")
     file_path_work = app.state.FILE_PATH / (str(measurement_id) + "_work.bson")
 
     metadata_dict = {
-        "measurement_id": measurement_id,
+        "_id": measurement_id,
         "person_id": person_id,
         "timestamp": timestamp,
         "duration_ms": duration_ms,
