@@ -21,7 +21,6 @@ async def lifespan(app: FastAPI):
     dotenv.load_dotenv(".env")
     app.state.db = await connectToDB()
     app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
-    app.state.WHITELIST=json.loads(os.getenv("WHITELIST", "[]"))
     app.state.FILE_PATH.mkdir(exist_ok=True)
     yield
     await app.state.db.client.close()
@@ -33,7 +32,8 @@ async def test():
     return {"status": "ok"}
 
 @app.put("/measurement/upload")
-async def uploadMeasurement(measurement_file: UploadFile = File(...),
+async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
+                            measurement_file_work: UploadFile = File(...),
                             person_id: str = Form(...),
                             timestamp: float = Form(...),
                             duration_ms: int = Form(...),
@@ -48,14 +48,16 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
     
     measurement_id = uuid.uuid4()
 
-    file_path = app.state.FILE_PATH / str(measurement_id) + ".bson"
+    file_path_raw = app.state.FILE_PATH / str(measurement_id) + "_raw.bson"
+    file_path_work = app.state.FILE_PATH / str(measurement_id) + "_work.bson"
 
     metadata_dict = {
         "measurement_id": measurement_id,
         "person_id": person_id,
         "timestamp": timestamp,
         "duration_ms": duration_ms,
-        "measurement_file_path": str(file_path),
+        "measurement_file_path_raw": str(file_path_raw),
+        "measurement_file_path_work": str(file_path_work),
         "labels": labels_list
     }
 
@@ -66,7 +68,8 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
     result = await coll.insert_one(metadata.model_dump())
 
     if result.acknowledged:
-        await jsonl_to_bson(measurement_file.file, file_path)
+        await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
+        await jsonl_to_bson(measurement_file_work.file, file_path_work)
 
     return
 
@@ -74,7 +77,8 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
 async def downloadMeasurements( person_id: Optional[str] = Query(None), 
                                 labels: Optional[str] = Query(None), 
                                 length_min: Optional[int] = Query(None),
-                                length_max: Optional[int] = Query(None)):
+                                length_max: Optional[int] = Query(None),
+                                quality: Optional[str] = Query(None)):
 
     coll = app.state.db.get_collection("measurement")
 
@@ -106,9 +110,13 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
     try:
         async for index in measurementIndexes:
             measurement = MeasurementMetadata(**index)
-            temp_file_path = dataset_dir / Path(measurement.measurement_file_path).name
-            await bson_to_jsonl(Path(measurement.measurement_file_path), temp_file_path, measurement)
-
+            if quality == "work" or quality == None:
+                temp_file_path = dataset_dir / Path(measurement.measurement_file_path_work).name
+                await bson_to_jsonl(Path(measurement.measurement_file_path_work), temp_file_path, measurement)
+            if quality == "raw" or quality == None:
+                temp_file_path = dataset_dir / Path(measurement.measurement_file_path_raw).name
+                await bson_to_jsonl(Path(measurement.measurement_file_path_raw), temp_file_path, measurement)
+                
         zip_path = tmp_dir / "measurements_dataset.zip"
         zip_directory(dataset_dir, zip_path)
 
