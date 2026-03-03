@@ -32,7 +32,7 @@ app = FastAPI(title="BRICS API",lifespan=lifespan)
 async def test():
     return {"status": "ok"}
 
-@app.post("/measurement/upload")
+@app.put("/measurement/upload")
 async def uploadMeasurement(measurement_file: UploadFile = File(...),
                             person_id: str = Form(...),
                             timestamp: float = Form(...),
@@ -72,11 +72,18 @@ async def uploadMeasurement(measurement_file: UploadFile = File(...),
 
 @app.get("/measurement/download")
 async def downloadMeasurements( person_id: Optional[str] = Query(None), 
-                                labels: Optional[list[str]] = Query(None), 
+                                labels: Optional[str] = Query(None), 
                                 length_min: Optional[int] = Query(None),
                                 length_max: Optional[int] = Query(None)):
 
     coll = app.state.db.get_collection("measurement")
+
+    try:
+        labels_list = json.loads(labels)
+        if not isinstance(labels_list, list):
+            raise ValueError()
+    except Exception:
+        raise HTTPException(400, "Labels must be a JSON list")
 
     query = {}
 
