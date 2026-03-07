@@ -118,8 +118,9 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
         if length_max:
             query["duration_ms"]["$lte"] = length_max
 
-    async with session.start_transaction():
-        measurementIndexes = coll.find(query,session=session)
+    await session.start_transaction()
+    measurementIndexes = coll.find(query,session=session)
+    await session.commit_transaction()
 
     tmp_dir = Path(tempfile.mkdtemp())
     dataset_dir = tmp_dir / "dataset"
