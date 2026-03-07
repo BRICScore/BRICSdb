@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
     app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
     app.state.FILE_PATH.mkdir(exist_ok=True)
     app.state.db = app.state.client.get_database("brics")
+    app.state.session = app.state.client.start_session()
     yield
     await app.state.client.close()
 
@@ -65,12 +66,12 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
 
     measurement_coll = app.state.db.get_collection("measurement")
 
-    with app.state.client.start_session() as session:
-        with session.start_transaction():            
-            result = await measurement_coll.insert_one(metadata.model_dump(), session=session)
-           
-            await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
-            await jsonl_to_bson(measurement_file_work.file, file_path_work)
+  
+    with app.state.session.start_transaction():            
+        result = await measurement_coll.insert_one(metadata.model_dump(), session=app.state.session)
+       
+        await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
+        await jsonl_to_bson(measurement_file_work.file, file_path_work)
             
     return
 
