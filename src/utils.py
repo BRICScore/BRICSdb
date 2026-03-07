@@ -9,7 +9,7 @@ import aiofiles
 async def jsonl_to_bson(src: UploadFile, dst: Path):
     async with aiofiles.open(dst, "wb") as f_out:
         while True:
-            line = await src.readline()
+            line = src.readline()
             if not line: 
                 break
             line = line.decode("utf-8").strip()
