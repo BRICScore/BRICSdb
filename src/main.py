@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import json
 import bson.objectid as bs
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
+from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Form, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
 from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
@@ -12,6 +12,7 @@ from typing import Optional
 from models import MeasurementMetadata
 import shutil
 import dotenv
+from pymongo.client_session import ClientSession
 
 
 
@@ -22,11 +23,16 @@ async def lifespan(app: FastAPI):
     app.state.FILE_PATH=Path(os.getenv("FILE_PATH"))
     app.state.FILE_PATH.mkdir(exist_ok=True)
     app.state.db = app.state.client.get_database("brics")
-    app.state.session = app.state.client.start_session()
     yield
     await app.state.client.close()
 
+
 app = FastAPI(title="BRICS API",lifespan=lifespan)
+
+async def get_session():
+    async with app.state.client.start_session() as session:
+        async with session.start_transaction():
+            yield session
 
 @app.get("/test")
 async def test():
@@ -38,7 +44,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
                             person_id: str = Form(...),
                             timestamp: float = Form(...),
                             duration_ms: int = Form(...),
-                            labels: str = Form(...)):
+                            labels: str = Form(...), session: ClientSession = Depends(get_session)):
     
     try:
         labels_list = json.loads(labels)
@@ -65,14 +71,16 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     metadata = MeasurementMetadata(**metadata_dict)
 
     measurement_coll = app.state.db.get_collection("measurement")
-
   
-    with app.state.session.start_transaction():            
-        result = await measurement_coll.insert_one(metadata.model_dump(), session=app.state.session)
-       
+    try:      
         await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
-        await jsonl_to_bson(measurement_file_work.file, file_path_work)
-            
+        await jsonl_to_bson(measurement_file_work.file, file_path_work)   
+        await measurement_coll.insert_one(metadata.model_dump(), session=session)
+    except:
+        file_path_raw.unlink(missing_ok=True)
+        file_path_work.unlink(missing_ok=True)
+        raise
+                
     return
 
 @app.get("/measurement/download")
@@ -80,7 +88,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
                                 labels: Optional[str] = Query(None), 
                                 length_min: Optional[int] = Query(None),
                                 length_max: Optional[int] = Query(None),
-                                quality: Optional[str] = Query(None)):
+                                quality: Optional[str] = Query(None), session: ClientSession = Depends(get_session)):
 
     coll = app.state.db.get_collection("measurement")
 
@@ -104,7 +112,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
         if length_max:
             query["duration_ms"]["$lte"] = length_max
 
-    measurementIndexes = coll.find(query)
+    measurementIndexes = coll.find(query,session=session)
 
     tmp_dir = Path(tempfile.mkdtemp())
     dataset_dir = tmp_dir / "dataset"
