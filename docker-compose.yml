@@ -1,8 +1,7 @@
 services:
   api:
     build: .
-    ports:
-      - "443:443"
+    network_mode: "host"
     env_file:
       - .env
     volumes:
