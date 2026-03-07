@@ -78,9 +78,11 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
         await jsonl_to_bson(measurement_file_work.file, file_path_work)   
 
-        async with session.start_transaction():
-            await measurement_coll.insert_one(metadata.model_dump(), session=session)
+        await session.start_transaction()
+        await measurement_coll.insert_one(metadata.model_dump(), session=session)
+        await session.commit_transaction()
     except:
+        await session.abort_transaction()
         file_path_raw.unlink(missing_ok=True)
         file_path_work.unlink(missing_ok=True)
         raise
