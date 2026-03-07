@@ -30,9 +30,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="BRICS API",lifespan=lifespan)
 
 async def get_session():
-    async with app.state.client.start_session() as session:
+    session = await app.state.client.start_session()
+    try:
         async with session.start_transaction():
             yield session
+    except:
+        await session.end_session()
 
 @app.get("/test")
 async def test():
