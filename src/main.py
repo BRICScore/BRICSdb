@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="BRICS API",lifespan=lifespan)
 
 async def get_session():
-    session = await app.state.client.start_session()
+    session = app.state.client.start_session()
     try:
         yield session
     finally:
@@ -77,7 +77,9 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     try:      
         await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
         await jsonl_to_bson(measurement_file_work.file, file_path_work)   
-        await measurement_coll.insert_one(metadata.model_dump(), session=session)
+
+        async with session.start_transaction():
+            await measurement_coll.insert_one(metadata.model_dump(), session=session)
     except:
         file_path_raw.unlink(missing_ok=True)
         file_path_work.unlink(missing_ok=True)
@@ -114,7 +116,8 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
         if length_max:
             query["duration_ms"]["$lte"] = length_max
 
-    measurementIndexes = coll.find(query,session=session)
+    async with session.start_transaction():
+        measurementIndexes = coll.find(query,session=session)
 
     tmp_dir = Path(tempfile.mkdtemp())
     dataset_dir = tmp_dir / "dataset"
