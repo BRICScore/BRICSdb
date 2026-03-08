@@ -12,8 +12,6 @@ from typing import Optional
 from models import MeasurementMetadata
 import shutil
 import dotenv
-from pymongo.client_session import ClientSession
-
 
 
 @asynccontextmanager
@@ -29,13 +27,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="BRICS API",lifespan=lifespan)
 
-async def get_session():
-    session = app.state.client.start_session()
-    try:
-        yield session
-    finally:
-        await session.end_session()
-
 @app.get("/test")
 async def test():
     return {"status": "ok"}
@@ -46,7 +37,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
                             person_id: str = Form(...),
                             timestamp: float = Form(...),
                             duration_ms: int = Form(...),
-                            labels: str = Form(...), session: ClientSession = Depends(get_session)):
+                            labels: str = Form(...)):
     
     try:
         labels_list = json.loads(labels)
@@ -77,12 +68,9 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     try:      
         await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
         await jsonl_to_bson(measurement_file_work.file, file_path_work)   
-
-        await session.start_transaction()
-        await measurement_coll.insert_one(metadata.model_dump(), session=session)
-        await session.commit_transaction()
+        await measurement_coll.insert_one(metadata.model_dump())
+        
     except:
-        await session.abort_transaction()
         file_path_raw.unlink(missing_ok=True)
         file_path_work.unlink(missing_ok=True)
         raise
@@ -94,7 +82,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
                                 labels: Optional[str] = Query(None), 
                                 length_min: Optional[int] = Query(None),
                                 length_max: Optional[int] = Query(None),
-                                quality: Optional[str] = Query(None), session: ClientSession = Depends(get_session)):
+                                quality: Optional[str] = Query(None)):
 
     coll = app.state.db.get_collection("measurement")
 
@@ -118,9 +106,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
         if length_max:
             query["duration_ms"]["$lte"] = length_max
 
-    await session.start_transaction()
-    measurementIndexes = coll.find(query,session=session)
-    await session.commit_transaction()
+    measurementIndexes = coll.find(query)
 
     tmp_dir = Path(tempfile.mkdtemp())
     dataset_dir = tmp_dir / "dataset"
