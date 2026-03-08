@@ -87,12 +87,13 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
 
     coll:Collection  = app.state.db.get_collection("measurement")
 
-    try:
-        labels_list = json.loads(labels)
-        if not isinstance(labels_list, list):
-            raise ValueError()
-    except Exception:
-        raise HTTPException(400, "Labels must be a JSON list")
+    if labels:
+        try:
+            labels_list = json.loads(labels)
+            if not isinstance(labels_list, list):
+                raise ValueError()
+        except Exception:
+            raise HTTPException(400, "Labels must be a JSON list")
 
     query = {}
 
