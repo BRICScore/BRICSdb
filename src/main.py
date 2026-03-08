@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import json
 import bson.objectid as bs
 from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Form, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
 import tempfile
@@ -12,6 +12,7 @@ from typing import Optional
 from models import MeasurementMetadata
 import shutil
 import dotenv
+from pymongo.collection import Collection
 
 
 @asynccontextmanager
@@ -48,8 +49,8 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     
     measurement_id = bs.ObjectId()
 
-    file_path_raw = app.state.FILE_PATH / (str(measurement_id) + "_raw.bson")
-    file_path_work = app.state.FILE_PATH / (str(measurement_id) + "_work.bson")
+    file_path_raw: Path = app.state.FILE_PATH / (str(measurement_id) + "_raw.bson")
+    file_path_work: Path = app.state.FILE_PATH / (str(measurement_id) + "_work.bson")
 
     metadata_dict = {
         "_id": measurement_id,
@@ -63,7 +64,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
 
     metadata = MeasurementMetadata(**metadata_dict)
 
-    measurement_coll = app.state.db.get_collection("measurement")
+    measurement_coll: Collection = app.state.db.get_collection("measurement")
   
     try:      
         await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
@@ -75,7 +76,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         file_path_work.unlink(missing_ok=True)
         raise
                 
-    return
+    return Response(content=metadata.model_dump_json(), media_type="application/json", status_code=201)
 
 @app.get("/measurement/download")
 async def downloadMeasurements( person_id: Optional[str] = Query(None), 
@@ -84,7 +85,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
                                 length_max: Optional[int] = Query(None),
                                 quality: Optional[str] = Query(None)):
 
-    coll = app.state.db.get_collection("measurement")
+    coll:Collection  = app.state.db.get_collection("measurement")
 
     try:
         labels_list = json.loads(labels)
@@ -131,5 +132,18 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
+@app.delete("/measurement/delete")
+async def deleteMeasurement(measurement_id: str = Query(None)):
+    coll: Collection = app.state.db.get_collection("measurement")
+
+    file_path_raw: Path = app.state.FILE_PATH / (str(measurement_id) + "_raw.bson")
+    file_path_work: Path = app.state.FILE_PATH / (str(measurement_id) + "_work.bson")
+
+
+    file_path_raw.unlink()
+    file_path_work.unlink()
+    measurement = await coll.find_one_and_delete(measurement_id)
+
+    return Response(content=measurement, status_code=200, media_type="application/json")
 
 
