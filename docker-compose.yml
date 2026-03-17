@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    network_mode: "host"
+    env_file:
+      - .env
+    volumes:
+      - ./certs:/certs:ro
+      - /home/brics/dataset:/dataset
+    restart: unless-stopped
