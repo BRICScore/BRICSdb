@@ -9,7 +9,6 @@ class BioData(BaseModel):
     condition: Literal["sedentary", "regular", "active", "extreme"]
 
 class LabelsData(BaseModel):
-    level: Literal["raw", "clean", "feature"]
     activity: str
     bio: BioData
 
