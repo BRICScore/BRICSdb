@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import json
 import bson.objectid as bs
 from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Form, Query
+from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
@@ -127,7 +128,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
         zip_directory(dataset_dir, zip_path)
 
         return FileResponse(
-            zip_path, filename=f"measurements_dataset.zip", media_type="application/zip", background=lambda: shutil.rmtree(tmp_dir)
+            zip_path, filename=f"measurements_dataset.zip", media_type="application/zip", background=BackgroundTask(shutil.rmtree, tmp_dir)
         )
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
