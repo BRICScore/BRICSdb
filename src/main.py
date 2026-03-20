@@ -33,7 +33,7 @@ app = FastAPI(title="BRICS API",lifespan=lifespan)
 async def test():
     return {"status": "ok"}
 
-@app.put("/measurement/upload")
+@app.post("/measurement/upload")
 async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
                             measurement_file_clean: UploadFile = File(...),
                             person_id: str = Form(...),
