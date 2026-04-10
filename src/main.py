@@ -146,19 +146,19 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
     dataset_dir.mkdir()
 
     for type in level:
-        (dataset_dir / type).mkdir()
+        (dataset_dir / type).mkdir(parents=True, exist_ok=True)
     try:
         async for index in measurementIndexes:
             measurement = MeasurementMetadata(**index)
-            if level == None or "clean" in level:
+            if "clean" in level:
                 temp_file_path = dataset_dir / "clean" / Path(measurement.measurement_file_path_clean).name
                 await bson_to_jsonl(Path(measurement.measurement_file_path_clean), temp_file_path, measurement)
-            if level == None or "raw" in level:
+            if "raw" in level:
                 temp_file_path = dataset_dir / "raw" / Path(measurement.measurement_file_path_raw).name
                 await bson_to_jsonl(Path(measurement.measurement_file_path_raw), temp_file_path, measurement)
-            if level == None or "features" in level:
+            if "features" in level:
                 temp_file_path = dataset_dir / "features" / Path(measurement.measurement_file_path_features).name
-                await bson_to_jsonl(Path(measurement.measurement_file_path_raw), temp_file_path, measurement)
+                await bson_to_jsonl(Path(measurement.measurement_file_path_features), temp_file_path, measurement)
                 
         zip_path = tmp_dir / "measurements_dataset.zip"
         zip_directory(dataset_dir, zip_path)
