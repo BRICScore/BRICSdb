@@ -13,15 +13,15 @@ class BioData(BaseModel):
 
 class LabelsData(BaseModel):
     activity: str
-    bio: BioData
+    person_data: BioData
 
 class MeasurementMetadata(BaseModel):
     _id: bs.ObjectId
     timestamp: float
     duration_ms: int
-    measurement_file_path_raw: str
-    measurement_file_path_clean: str
-    measurement_file_path_features: str
+    filepath_raw: str
+    filepath_clean: str
+    filepath_features: str
     labels: LabelsData
 
 

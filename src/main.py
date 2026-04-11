@@ -64,13 +64,13 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         measurement_id = _id
 
     try:
-        file_path_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
-        file_path_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
-        file_path_features: Path = app.state.FILE_PATH / f"{measurement_id}_features"
+        filepath_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
+        filepath_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
+        filepath_features: Path = app.state.FILE_PATH / f"{measurement_id}_features"
         metadata_dict["_id"] = measurement_id
-        metadata_dict["measurement_file_path_raw"] = str(file_path_raw)
-        metadata_dict["measurement_file_path_clean"] = str(file_path_clean)
-        metadata_dict["measurement_file_path_features"] = str(file_path_features)
+        metadata_dict["filepath_raw"] = str(filepath_raw)
+        metadata_dict["filepath_clean"] = str(filepath_clean)
+        metadata_dict["filepath_features"] = str(filepath_features)
     except Exception:
         raise HTTPException(500, "Failed to prepare space for measurement")
     
@@ -80,15 +80,15 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         raise HTTPException(400, "Invalid metadata structure")
   
     try:      
-        await jsonl_to_bson(measurement_file_raw, file_path_raw)
-        await jsonl_to_bson(measurement_file_clean, file_path_clean)
-        await jsonl_to_bson(measurement_file_features, file_path_features)   
         await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump()}, upsert=True)
+        await jsonl_to_bson(measurement_file_raw, filepath_raw)
+        await jsonl_to_bson(measurement_file_clean, filepath_clean)
+        await jsonl_to_bson(measurement_file_features, filepath_features)   
         
     except Exception:
-        file_path_raw.unlink(missing_ok=True)
-        file_path_clean.unlink(missing_ok=True)
-        file_path_features.unlink(missing_ok=True)
+        filepath_raw.unlink(missing_ok=True)
+        filepath_clean.unlink(missing_ok=True)
+        filepath_features.unlink(missing_ok=True)
         raise
                 
     return JSONResponse(content=metadata.model_dump(), status_code=201)
@@ -114,30 +114,25 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
     query: dict[str, Any] = {}
 
     if person_id:
-        query["person_id"] = person_id
-    query["duration_ms"] = {}
-    query["duration_ms"]["$gte"] = length_min
-    query["duration_ms"]["$lte"] = length_max
-    query["weight"] = {}
-    query["weight"]["$gte"] = weight_min
-    query["weight"]["$lte"] = weight_max
-    query["height"] = {}
-    query["height"]["$gte"] = height_min
-    query["height"]["$lte"] = height_max
-    
-    query["labels"] = {}
-    query["labels"]["$elemMatch"] = {}
-    query["labels"]["$elemMatch"]["age"] = {"$gte": age_min, "$lte": age_max}
-    if level:
-        query["labels"]["$elemMatch"]["level"] = {"$in": level}
+        query["labels.person_data.person_id"] = person_id
+
+    query["duration_ms"] = {"$gte": length_min, "$lte": length_max}
+
+    query["labels.person_data.weight"] = {"$gte": weight_min, "$lte": weight_max}
+    query["labels.person_data.height"] = {"$gte": height_min, "$lte": height_max}
+    query["labels.person_data.age"] = {"$gte": age_min, "$lte": age_max}
+
     if gender:
-        query["labels"]["$elemMatch"]["gender"] = {"$in": gender}
+        query["labels.person_data.gender"] = {"$in": gender}
+
     if activity:
-        query["labels"]["$elemMatch"]["activity"] = {"$in": activity}
+        query["labels.activity"] = {"$in": activity}
+
     if condition:
-        query["labels"]["$elemMatch"]["condition"] = {"$in": condition}
+        query["labels.person_data.condition"] = {"$in": condition}
+
     if health:
-        query["labels"]["$elemMatch"]["health"] = {"$in": health}
+        query["labels.person_data.health"] = {"$in": health}
 
     measurementIndexes = coll.find(query)
 
@@ -145,20 +140,24 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
     dataset_dir = tmp_dir / "dataset"
     dataset_dir.mkdir()
 
+    allowed_levels = ["raw", "clean", "features"]
+    if not set(level).issubset(allowed_levels):
+        raise HTTPException(400, "Invalid level value")
+
     for type in level:
         (dataset_dir / type).mkdir(parents=True, exist_ok=True)
     try:
         async for index in measurementIndexes:
             measurement = MeasurementMetadata(**index)
             if "clean" in level:
-                temp_file_path = dataset_dir / "clean" / Path(measurement.measurement_file_path_clean).name
-                await bson_to_jsonl(Path(measurement.measurement_file_path_clean), temp_file_path, measurement)
+                temp_file_path = dataset_dir / "clean" / Path(measurement.filepath_clean).name
+                await bson_to_jsonl(Path(measurement.filepath_clean), temp_file_path, measurement)
             if "raw" in level:
-                temp_file_path = dataset_dir / "raw" / Path(measurement.measurement_file_path_raw).name
-                await bson_to_jsonl(Path(measurement.measurement_file_path_raw), temp_file_path, measurement)
+                temp_file_path = dataset_dir / "raw" / Path(measurement.filepath_raw).name
+                await bson_to_jsonl(Path(measurement.filepath_raw), temp_file_path, measurement)
             if "features" in level:
-                temp_file_path = dataset_dir / "features" / Path(measurement.measurement_file_path_features).name
-                await bson_to_jsonl(Path(measurement.measurement_file_path_features), temp_file_path, measurement)
+                temp_file_path = dataset_dir / "features" / Path(measurement.filepath_features).name
+                await bson_to_jsonl(Path(measurement.filepath_features), temp_file_path, measurement)
                 
         zip_path = tmp_dir / "measurements_dataset.zip"
         zip_directory(dataset_dir, zip_path)
@@ -174,16 +173,22 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
 async def deleteMeasurement(measurement_id: str = Query(None)):
     coll: AsyncCollection = app.state.db.get_collection("measurement")
 
-    file_path_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
-    file_path_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
-    file_path_features: Path = app.state.FILE_PATH / f"{measurement_id}_features"
+    filepath_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
+    filepath_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
+    filepath_features: Path = app.state.FILE_PATH / f"{measurement_id}_features"
 
-    measurement = await coll.find_one_and_delete({"_id": bs.ObjectId(measurement_id)})
+    try:
+        oid = bs.ObjectId(measurement_id)
+    except Exception:
+        raise HTTPException(400, "Invalid measurement_id")
+
+
+    measurement = await coll.find_one_and_delete({"_id": oid})
 
     if measurement:
-        file_path_raw.unlink(missing_ok=True)
-        file_path_clean.unlink(missing_ok=True)
-        file_path_features.unlink(missing_ok=True)
+        filepath_raw.unlink(missing_ok=True)
+        filepath_clean.unlink(missing_ok=True)
+        filepath_features.unlink(missing_ok=True)
 
     return JSONResponse(content=measurement, status_code=200)
 
