@@ -8,12 +8,12 @@ import aiofiles
 
 async def jsonl_to_bson(src: UploadFile, dst: Path):
     async with aiofiles.open(dst, "wb") as f_out:
-        while True:
-            line = src.readline()
+        data = await src.read()
+        for line in data.splitlines():
             if not line: 
-                break
-            line = line.decode("utf-8").strip()
-            doc = json.loads(line)
+                continue
+            new_line = line.decode("utf-8").strip()
+            doc = json.loads(new_line)
             await f_out.write(bson.BSON.encode(doc))
 
 async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
@@ -21,6 +21,7 @@ async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
         dict = metadata.model_dump()
         del dict["measurement_file_path_raw"]
         del dict["measurement_file_path_clean"]
+        del dict["measurement_file_path_features"]
         await f_out.write(json.dumps(dict))
         await f_out.write("\n")
         with open(src, "rb") as f_in:

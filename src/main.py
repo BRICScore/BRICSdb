@@ -9,11 +9,11 @@ from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
 import tempfile
 from db import connectToDB
 import os
-from typing import List, Optional
+from typing import Any, List, Mapping, Optional
 from models import *
 import shutil
 import dotenv
-from pymongo.collection import Collection
+from pymongo.asynchronous.collection import AsyncCollection
 
 
 @asynccontextmanager
@@ -33,54 +33,62 @@ app = FastAPI(title="BRICS API",lifespan=lifespan)
 async def test():
     return {"status": "ok"}
 
-@app.post("/measurement/upload")
+@app.put("/measurement/upload")
 async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
                             measurement_file_clean: UploadFile = File(...),
-                            person_id: str = Form(...),
-                            timestamp: float = Form(...),
-                            duration_ms: int = Form(...),
-                            labels: str = Form(...)):
+                            measurement_file_features: UploadFile = File(...),
+                            measurement_metadata: str = Form(...)):
     
     try:
-        labels_dict = json.loads(labels)
-        if not isinstance(labels_dict, dict):
+        metadata_dict = json.loads(measurement_metadata)
+        if not isinstance(metadata_dict, dict):
             raise ValueError()
     except Exception:
-        raise HTTPException(400, "Labels must be a JSON array")
+        raise HTTPException(400, "Metadata must be a JSON object")
+    
+    measurement_coll: AsyncCollection = app.state.db.get_collection("measurement")
+    
+    if "_id" not in metadata_dict or not metadata_dict["_id"]:
+        raise HTTPException(400, "Missing ID from metadata")
     
     try:
-        labels_data = LabelsData(**labels_dict)
+        _id = bs.ObjectId(metadata_dict["_id"])
     except Exception:
-        raise HTTPException(400, "Invalid label structure")
+        _id = bs.ObjectId()
+
+    existing_measurement = await measurement_coll.find_one({"_id": _id})
+
+    if existing_measurement:
+        measurement_id = existing_measurement["_id"]
+    else:
+        measurement_id = _id
+
+    try:
+        file_path_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
+        file_path_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
+        file_path_features: Path = app.state.FILE_PATH / f"{measurement_id}_features"
+        metadata_dict["_id"] = measurement_id
+        metadata_dict["measurement_file_path_raw"] = str(file_path_raw)
+        metadata_dict["measurement_file_path_clean"] = str(file_path_clean)
+        metadata_dict["measurement_file_path_features"] = str(file_path_features)
+    except Exception:
+        raise HTTPException(500, "Failed to prepare space for measurement")
     
-    measurement_id = bs.ObjectId()
-
-    file_path_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
-    file_path_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
-
-
-    metadata_dict = {
-        "_id": measurement_id,
-        "person_id": person_id,
-        "timestamp": timestamp,
-        "duration_ms": duration_ms,
-        "measurement_file_path_raw": str(file_path_raw),
-        "measurement_file_path_clean": str(file_path_clean),
-        "labels": labels_data.model_dump()
-    }
-
-    metadata = MeasurementMetadata(**metadata_dict)
-
-    measurement_coll: Collection = app.state.db.get_collection("measurement")
+    try:
+        metadata = MeasurementMetadata(**metadata_dict)
+    except Exception:
+        raise HTTPException(400, "Invalid metadata structure")
   
     try:      
-        await jsonl_to_bson(measurement_file_raw.file, file_path_raw)
-        await jsonl_to_bson(measurement_file_clean.file, file_path_clean)   
-        await measurement_coll.insert_one(metadata.model_dump())
+        await jsonl_to_bson(measurement_file_raw, file_path_raw)
+        await jsonl_to_bson(measurement_file_clean, file_path_clean)
+        await jsonl_to_bson(measurement_file_features, file_path_features)   
+        await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump()}, upsert=True)
         
     except Exception:
         file_path_raw.unlink(missing_ok=True)
         file_path_clean.unlink(missing_ok=True)
+        file_path_features.unlink(missing_ok=True)
         raise
                 
     return JSONResponse(content=metadata.model_dump(), status_code=201)
@@ -91,21 +99,31 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
                                 length_max: Optional[int] = Query(86400000),
                                 age_min: Optional[int] = Query(0),
                                 age_max: Optional[int] = Query(100),
-                                level: Optional[List[str]] = Query(None),
+                                level: List[str] = Query(["raw", "clean", "features"]),
                                 gender: Optional[List[str]] = Query(None),
                                 activity: Optional[List[str]] = Query(None),
                                 condition: Optional[List[str]] = Query(None),
-                                health: Optional[List[str]] = Query(None)):
+                                health: Optional[List[str]] = Query(None),
+                                weight_min: Optional[int] = Query(0),
+                                weight_max: Optional[int] = Query(200),
+                                height_min: Optional[int] = Query(0),
+                                height_max: Optional[int] = Query(250)):
 
-    coll:Collection  = app.state.db.get_collection("measurement")
+    coll: AsyncCollection  = app.state.db.get_collection("measurement")
 
-    query = {}
+    query: dict[str, Any] = {}
 
     if person_id:
         query["person_id"] = person_id
     query["duration_ms"] = {}
     query["duration_ms"]["$gte"] = length_min
     query["duration_ms"]["$lte"] = length_max
+    query["weight"] = {}
+    query["weight"]["$gte"] = weight_min
+    query["weight"]["$lte"] = weight_max
+    query["height"] = {}
+    query["height"]["$gte"] = height_min
+    query["height"]["$lte"] = height_max
     
     query["labels"] = {}
     query["labels"]["$elemMatch"] = {}
@@ -126,15 +144,21 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
     tmp_dir = Path(tempfile.mkdtemp())
     dataset_dir = tmp_dir / "dataset"
     dataset_dir.mkdir()
+
+    for type in level:
+        (dataset_dir / type).mkdir(parents=True, exist_ok=True)
     try:
         async for index in measurementIndexes:
             measurement = MeasurementMetadata(**index)
-            if level == None or "clean" in level:
-                temp_file_path = dataset_dir / Path(measurement.measurement_file_path_clean).name
+            if "clean" in level:
+                temp_file_path = dataset_dir / "clean" / Path(measurement.measurement_file_path_clean).name
                 await bson_to_jsonl(Path(measurement.measurement_file_path_clean), temp_file_path, measurement)
-            if level == None or "raw" in level:
-                temp_file_path = dataset_dir / Path(measurement.measurement_file_path_raw).name
+            if "raw" in level:
+                temp_file_path = dataset_dir / "raw" / Path(measurement.measurement_file_path_raw).name
                 await bson_to_jsonl(Path(measurement.measurement_file_path_raw), temp_file_path, measurement)
+            if "features" in level:
+                temp_file_path = dataset_dir / "features" / Path(measurement.measurement_file_path_features).name
+                await bson_to_jsonl(Path(measurement.measurement_file_path_features), temp_file_path, measurement)
                 
         zip_path = tmp_dir / "measurements_dataset.zip"
         zip_directory(dataset_dir, zip_path)
@@ -148,15 +172,18 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
 
 @app.delete("/measurement/delete")
 async def deleteMeasurement(measurement_id: str = Query(None)):
-    coll: Collection = app.state.db.get_collection("measurement")
+    coll: AsyncCollection = app.state.db.get_collection("measurement")
 
     file_path_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
     file_path_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
+    file_path_features: Path = app.state.FILE_PATH / f"{measurement_id}_features"
 
+    measurement = await coll.find_one_and_delete({"_id": bs.ObjectId(measurement_id)})
 
-    file_path_raw.unlink()
-    file_path_clean.unlink()
-    measurement = await coll.find_one_and_delete(measurement_id)
+    if measurement:
+        file_path_raw.unlink(missing_ok=True)
+        file_path_clean.unlink(missing_ok=True)
+        file_path_features.unlink(missing_ok=True)
 
     return JSONResponse(content=measurement, status_code=200)
 
