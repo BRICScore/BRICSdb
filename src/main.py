@@ -48,7 +48,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     
     measurement_coll: AsyncCollection = app.state.db.get_collection("measurement")
     
-    if "_id" not in metadata_dict or not metadata_dict["_id"]:
+    if "_id" not in metadata_dict:
         raise HTTPException(400, "Missing ID from metadata")
     
     try:
