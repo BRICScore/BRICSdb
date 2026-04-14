@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 import json
-import bson.objectid as bs
+import bson as bs
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
 from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, JSONResponse

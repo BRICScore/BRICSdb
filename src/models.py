@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-import bson.objectid as bs
+from bson import ObjectId
 
 class BioData(BaseModel):
     person_id: str
@@ -16,7 +16,11 @@ class LabelsData(BaseModel):
     person_data: BioData
 
 class MeasurementMetadata(BaseModel):
-    _id: bs.ObjectId
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    _id: ObjectId
     timestamp: float
     duration_ms: int
     filepath_raw: str
