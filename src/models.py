@@ -20,7 +20,7 @@ class MeasurementMetadata(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    _id: ObjectId
+    id: ObjectId = Field(alias="_id")
     timestamp: float
     duration_ms: int
     filepath_raw: str

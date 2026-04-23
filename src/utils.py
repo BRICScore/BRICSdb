@@ -18,7 +18,7 @@ async def jsonl_to_bson(src: UploadFile, dst: Path):
 
 async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
     async with aiofiles.open(dst, "w", encoding="utf-8") as f_out:
-        dict = metadata.model_dump()
+        dict = metadata.model_dump(by_alias=True)
         await f_out.write(json.dumps(dict))
         await f_out.write("\n")
         with open(src, "rb") as f_in:
@@ -27,7 +27,7 @@ async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
                 await f_out.write(line + "\n")
 
 def zip_directory(src_dir: Path, zip_path: Path):
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for file in src_dir.rglob("*"):
             if file.is_file():
                 zf.write(

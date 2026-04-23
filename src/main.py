@@ -80,7 +80,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         raise HTTPException(400, "Invalid metadata structure")
   
     try:      
-        await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump()}, upsert=True)
+        await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump(by_alias=True)}, upsert=True)
         await jsonl_to_bson(measurement_file_raw, filepath_raw)
         await jsonl_to_bson(measurement_file_clean, filepath_clean)
         await jsonl_to_bson(measurement_file_features, filepath_features)   
