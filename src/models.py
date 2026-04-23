@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Optional
 from bson import ObjectId
 
@@ -17,8 +17,8 @@ class LabelsData(BaseModel):
 
 class MeasurementMetadata(BaseModel):
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True, json_encoders={ObjectId: str}, populate_by_name=True)
+
 
     id: ObjectId = Field(alias="_id")
     timestamp: float
