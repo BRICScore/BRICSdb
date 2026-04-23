@@ -18,8 +18,8 @@ async def jsonl_to_bson(src: UploadFile, dst: Path):
 
 async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
     async with aiofiles.open(dst, "w", encoding="utf-8") as f_out:
-        dict = metadata.model_dump(by_alias=True)
-        await f_out.write(json.dumps(dict))
+        dict = metadata.model_dump_json(by_alias=True)
+        await f_out.write(dict)
         await f_out.write("\n")
         with open(src, "rb") as f_in:
             for doc in bson.decode_file_iter(f_in):
