@@ -83,15 +83,18 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump(by_alias=True)}, upsert=True)
         await jsonl_to_bson(measurement_file_raw, filepath_raw)
         await jsonl_to_bson(measurement_file_clean, filepath_clean)
-        await jsonl_to_bson(measurement_file_features, filepath_features)   
+        await jsonl_to_bson(measurement_file_features, filepath_features)
+        return_json = metadata.model_dump_json()   
         
     except Exception:
+        await measurement_coll.delete_one({"_id": measurement_id})
         filepath_raw.unlink(missing_ok=True)
         filepath_clean.unlink(missing_ok=True)
         filepath_features.unlink(missing_ok=True)
         raise
                 
-    return JSONResponse(content=metadata.model_dump(), status_code=201)
+    
+    return JSONResponse(content=return_json, status_code=201)
 
 @app.get("/measurement/download")
 async def downloadMeasurements( person_id: Optional[str] = Query(None),  
