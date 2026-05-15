@@ -5,7 +5,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Query
 from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
-from utils import jsonl_to_bson, bson_to_jsonl, zip_directory
+from utils import jsonl_to_bson, bson_to_jsonl, zip_directory, plain_json
 import tempfile
 from db import connectToDB
 import os
@@ -13,6 +13,7 @@ from typing import Any, List, Mapping, Optional
 from models import *
 import shutil
 import dotenv
+import zipfile
 from pymongo.asynchronous.collection import AsyncCollection
 
 
@@ -34,9 +35,7 @@ async def test():
     return {"status": "ok"}
 
 @app.put("/measurement/upload")
-async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
-                            measurement_file_clean: UploadFile = File(...),
-                            measurement_file_features: UploadFile = File(...),
+async def uploadMeasurement(measurement_file_zip: UploadFile = File(...),
                             measurement_metadata: str = Form(...)):
     
     try:
@@ -46,7 +45,7 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
     except Exception:
         raise HTTPException(400, "Metadata must be a JSON object")
     
-    measurement_coll: AsyncCollection = app.state.db.get_collection("measurement")
+    measurement_coll: AsyncCollection = app.state.db.get_collection("measurements")
     
     if "_id" not in metadata_dict:
         raise HTTPException(400, "Missing ID from metadata")
@@ -62,6 +61,13 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
         measurement_id = existing_measurement["_id"]
     else:
         measurement_id = _id
+
+    tmp_dir = Path(tempfile.mkdtemp())
+    with zipfile.ZipFile(measurement_file_zip.file) as zf:
+        zf.extractall(tmp_dir)
+
+    
+
 
     try:
         filepath_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
@@ -81,10 +87,10 @@ async def uploadMeasurement(measurement_file_raw: UploadFile = File(...),
   
     try:      
         await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump(by_alias=True)}, upsert=True)
-        await jsonl_to_bson(measurement_file_raw, filepath_raw)
-        await jsonl_to_bson(measurement_file_clean, filepath_clean)
-        await jsonl_to_bson(measurement_file_features, filepath_features)
-        return_json = metadata.model_dump_json()   
+        await jsonl_to_bson(tmp_dir / f"{measurement_id}_raw", filepath_raw)
+        await jsonl_to_bson(tmp_dir / f"{measurement_id}_clean", filepath_clean)
+        await jsonl_to_bson(tmp_dir / f"{measurement_id}_features", filepath_features)
+        return_json = metadata.model_dump_json(by_alias=True)   
         
     except Exception:
         await measurement_coll.delete_one({"_id": measurement_id})
@@ -112,7 +118,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
                                 height_min: Optional[int] = Query(0),
                                 height_max: Optional[int] = Query(250)):
 
-    coll: AsyncCollection  = app.state.db.get_collection("measurement")
+    coll: AsyncCollection  = app.state.db.get_collection("measurements")
 
     query: dict[str, Any] = {}
 
@@ -174,7 +180,7 @@ async def downloadMeasurements( person_id: Optional[str] = Query(None),
 
 @app.delete("/measurement/delete")
 async def deleteMeasurement(measurement_id: str = Query(None)):
-    coll: AsyncCollection = app.state.db.get_collection("measurement")
+    coll: AsyncCollection = app.state.db.get_collection("measurements")
 
     filepath_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
     filepath_clean: Path = app.state.FILE_PATH / f"{measurement_id}_clean"
