@@ -13,8 +13,7 @@ async def jsonl_to_bson(src: Path, dst: Path):
         for line in data.splitlines():
             if not line: 
                 continue
-            new_line = line.decode("utf-8").strip()
-            doc = json.loads(new_line)
+            doc = json.loads(line)
             await f_out.write(bson.BSON.encode(doc))
 
 async def bson_to_jsonl(src: Path, dst: Path, metadata: MeasurementMetadata):
