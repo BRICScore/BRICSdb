@@ -65,9 +65,10 @@ async def uploadMeasurement(measurement_file_zip: UploadFile = File(...),
     tmp_dir = Path(tempfile.mkdtemp())
     with zipfile.ZipFile(measurement_file_zip.file) as zf:
         zf.extractall(tmp_dir)
-
-    
-
+        namelist = zf.namelist()
+        zippath_raw = namelist[0]
+        zippath_clean = namelist[1]
+        zippath_features = namelist[2]
 
     try:
         filepath_raw: Path = app.state.FILE_PATH / f"{measurement_id}_raw"
@@ -87,9 +88,9 @@ async def uploadMeasurement(measurement_file_zip: UploadFile = File(...),
   
     try:      
         await measurement_coll.update_one({"_id": measurement_id}, {"$set": metadata.model_dump(by_alias=True)}, upsert=True)
-        await jsonl_to_bson(tmp_dir / f"{measurement_id}_raw", filepath_raw)
-        await jsonl_to_bson(tmp_dir / f"{measurement_id}_clean", filepath_clean)
-        await jsonl_to_bson(tmp_dir / f"{measurement_id}_features", filepath_features)
+        await jsonl_to_bson(tmp_dir / zippath_raw, filepath_raw)
+        await jsonl_to_bson(tmp_dir / zippath_clean, filepath_clean)
+        await jsonl_to_bson(tmp_dir / zippath_features, filepath_features)
         return_json = metadata.model_dump_json(by_alias=True)   
         
     except Exception:
